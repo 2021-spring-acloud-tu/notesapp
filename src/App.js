@@ -29,7 +29,7 @@ import {
   , updateNote as UpdateNote
 } from './graphql/mutations';
 
-import { onCreateNote } from './graphql/subscriptions';
+import { onCreateNote, onDeleteNote } from './graphql/subscriptions';
 
 const CLIENT_ID = uuid();
 
@@ -82,6 +82,12 @@ const reducer = (state, action) => {
           ...state.form
           , [action.name]: action.value
         }
+      };
+    
+    case 'DELETE_NOTE':
+      return {
+        ...state
+        , notes: state.notes.filter(x => x.id !== action.id)
       };
 
     default:
@@ -145,8 +151,31 @@ const App = () => {
           }
         }  
       );
-     
-      return () => subscription.unsubscribe();
+
+      const deleteSubscription = API.graphql(
+        {
+          query: onDeleteNote
+        }
+      ).subscribe(
+        {
+          next: subscriptionData => {
+            
+            // See what we get with the delete subscription.
+            console.log(subscriptionData);
+
+            dispatch({
+              type: 'DELETE_NOTE'
+              // Just pass the ID to the reducer.
+              , id: subscriptionData.value.data.onDeleteNote.id
+            });
+          }
+        }  
+      );
+      
+      return () => {
+        subscription.unsubscribe();
+        deleteSubscription.unsubscribe();
+      }
     }
     , []
   );
@@ -221,14 +250,10 @@ const App = () => {
 
 
   const deleteNote = async (noteToDelete) => {
-
-    // Optimistically update state with the note removed.
-    dispatch({
-      type: "SET_NOTES"
-      , notes: state.notes.filter(x => x != noteToDelete)
-    });
     
-    // Call the backend to delete the note.
+    // Call the backend to delete the note. A GraphQL
+    // subscription will remove the note from the displayed
+    // notes via a new reducer action ! ! !
     try {
       await API.graphql({
         query: DeleteNote
